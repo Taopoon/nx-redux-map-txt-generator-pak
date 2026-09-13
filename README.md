@@ -27,6 +27,11 @@ Adapted from [josegonzalez/minui-map-txt-generator-pak](https://github.com/joseg
 - **Backup of the previous map.txt** — NX Redux's *Rename Rom* stores user
   aliases in the same `map.txt`. Before regenerating, the old file is copied to
   a hidden `.map.txt.bak` in the same folder so nothing is lost.
+- **Settings-file protection** — the `-nextui` UI binaries embed NextUI
+  v6.14 code whose settings loader rewrites `minuisettings.txt` and drops every
+  NX Redux-only key (theme/options reset to defaults after running the pak).
+  The pak points their write path at a throwaway sandbox, snapshots the real
+  file, and restores it if keys ever go missing.
 
 ## Requirements
 
