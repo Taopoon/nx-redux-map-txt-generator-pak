@@ -63,6 +63,15 @@ fi
 
 LOCAL_DAT_LABEL="Use local dat files (dats folder)"
 ALL_DATS_LABEL="Use every Dat File"
+MAME2003PLUS_LABEL="MAME 2003 Plus (libretro mame2003-plus.xml)"
+
+# MAME 2003 Plus has no FBNeo-style dat on GitHub; libretro ships the core's
+# full -listxml (~22 MB). Only <game name>/<description> matter to the
+# creator, so it is slimmed to ~650 KB once and cached. BIOS sets are marked
+# runnable="no" there; rewriting that to isbios="yes" makes the creator
+# hide them the same way it hides FBNeo BIOS entries.
+MAME2003PLUS_XML_URL="${MAME2003PLUS_XML_URL:-https://raw.githubusercontent.com/libretro/mame2003-plus-libretro/master/metadata/mame2003-plus.xml}"
+MAME2003PLUS_DAT="$DAT_CACHE_DIR/mame2003-plus.dat"
 
 # --- NX Redux settings-file protection -------------------------------------
 REAL_SHARED_USERDATA_PATH="${SHARED_USERDATA_PATH:-$SDCARD_PATH/.userdata/shared}"
@@ -112,8 +121,13 @@ has_local_dats() {
     [ -d "$LOCAL_DAT_DIR" ] && ls "$LOCAL_DAT_DIR"/*.dat "$LOCAL_DAT_DIR"/*.xml >/dev/null 2>&1
 }
 
+# FBNeo folders plus any MAME-family folder (NX Redux ships MAME2003PLUS)
 populate_emus_list() {
-    ls -A "$SDCARD_PATH/Roms" 2>/dev/null | grep -v '^\.' | grep '(FBN)' | sort >/tmp/emus.list
+    ls -A "$SDCARD_PATH/Roms" 2>/dev/null | grep -v '^\.' | grep -E '\((FBN|MAME[A-Z0-9]*)\)' | sort >/tmp/emus.list
+}
+
+is_mame_folder() {
+    echo "$1" | grep -qE '\(MAME[A-Z0-9]*\)'
 }
 
 main_screen() {
@@ -140,6 +154,9 @@ action_menu() {
     rm -f /tmp/action.list /tmp/action-output
 
     {
+        if is_mame_folder "$ROM_FOLDER"; then
+            echo "$MAME2003PLUS_LABEL"
+        fi
         if has_local_dats; then
             echo "$LOCAL_DAT_LABEL"
         fi
@@ -203,6 +220,7 @@ log_net_state() {
 }
 
 net_preflight() {
+    [ -n "$MAPTXT_SKIP_NETCHECK" ] && return 0 # host-side tests only
     log_net_state
     has_nameserver && return 0
 
@@ -222,6 +240,48 @@ net_preflight() {
     return 1
 }
 
+# wget: the vendored GNU wget in .system/shared/bin takes --ca-certificate;
+# busybox wget (fallback) only knows --no-check-certificate
+fetch_url() {
+    url="$1"
+    dest="$2"
+    if wget --version 2>/dev/null | grep -q GNU; then
+        if [ -n "$SSL_CERT_FILE" ]; then
+            wget -q --timeout=30 --tries=2 --ca-certificate="$SSL_CERT_FILE" -O "$dest" "$url"
+        else
+            wget -q --timeout=30 --tries=2 --no-check-certificate -O "$dest" "$url"
+        fi
+    else
+        wget -q -T 30 --no-check-certificate -O "$dest" "$url"
+    fi
+}
+
+ensure_mame2003plus_dat() {
+    [ -s "$MAME2003PLUS_DAT" ] && return 0
+    show_message "Downloading MAME 2003 Plus game list (22 MB)..." forever
+    xml="$DAT_CACHE_DIR/mame2003-plus.xml.part"
+    rm -f "$xml"
+    if ! fetch_url "$MAME2003PLUS_XML_URL" "$xml" || [ ! -s "$xml" ]; then
+        rm -f "$xml"
+        show_message "Download of mame2003-plus.xml failed (see log)" 3
+        return 1
+    fi
+    {
+        echo '<datafile>'
+        grep -E '<game |<description>|</game>' "$xml" | sed 's/runnable="no"/isbios="yes"/'
+        echo '</datafile>'
+    } >"$MAME2003PLUS_DAT.tmp"
+    rm -f "$xml"
+    if ! grep -q '<game ' "$MAME2003PLUS_DAT.tmp"; then
+        rm -f "$MAME2003PLUS_DAT.tmp"
+        show_message "mame2003-plus.xml had no game entries" 3
+        return 1
+    fi
+    mv -f "$MAME2003PLUS_DAT.tmp" "$MAME2003PLUS_DAT"
+    echo "cached $(grep -c '<game ' "$MAME2003PLUS_DAT") games -> $MAME2003PLUS_DAT" 1>&2
+    return 0
+}
+
 generate_map_txt() {
     ROM_FOLDER="$1"
     FBN_DAT_FILE="$2"
@@ -236,7 +296,12 @@ generate_map_txt() {
     backup_map_txt "$MAP_FILE"
 
     exit_code=0
-    if [ "$FBN_DAT_FILE" = "$LOCAL_DAT_LABEL" ]; then
+    if [ "$FBN_DAT_FILE" = "$MAME2003PLUS_LABEL" ]; then
+        ensure_mame2003plus_dat || return 1
+        show_message "Generating map.txt for $ROM_FOLDER with MAME 2003 Plus list" forever
+        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -dat "$MAME2003PLUS_DAT"
+        exit_code=$?
+    elif [ "$FBN_DAT_FILE" = "$LOCAL_DAT_LABEL" ]; then
         show_message "Generating map.txt for $ROM_FOLDER with local dat files" forever
         # build the arg list positionally so paths with spaces/parens survive
         set -- -roms "$ROMS_DIR" -map "$MAP_FILE"
