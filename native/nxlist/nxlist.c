@@ -322,9 +322,10 @@ static bool step_enter(int k) {
 	expand(s->file_tpl, prev_label, prev_index, s->file, sizeof(s->file));
 
 	if (list_load(&s->list, s->file) <= 0) {
-		fprintf(stderr, "nxlist: step %d list %s missing or empty\n", k + 1, s->file);
+		TRACE("step %d list %s missing or empty", k + 1, s->file);
 		return false;
 	}
+	TRACE("step %d: '%s' (%d items from %s)", k + 1, s->title, s->list.count, s->file);
 	s->hints[0] = "B";
 	s->hints[1] = (char*)s->cancel_text;
 	s->hints[2] = "A";
