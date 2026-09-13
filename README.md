@@ -18,7 +18,7 @@ Adapted from [josegonzalez/minui-map-txt-generator-pak](https://github.com/joseg
   ([`native/nxlist`](native/nxlist)), compiled inside the NX Redux workspace
   with the launcher's own toolkit (`ListView`, menu bar, button-hint bar), so
   fonts, theme colors, the clock/battery bar and the `B EXIT / A SELECT`
-  hints match the Tools menu exactly. No minui-list / minui-presenter.
+  hints match the Tools menu exactly.
 - **Verified TLS** — the firmware ships no CA store, so dat downloads use the
   NX Redux bundle (`.system/shared/ssl/ca-certificates.crt`). `-ignore-tls` is
   only used if that bundle is missing.
@@ -35,9 +35,6 @@ Adapted from [josegonzalez/minui-map-txt-generator-pak](https://github.com/joseg
   `(MAME…)` tag) are listed too, with a *MAME 2003 Plus* option that uses
   libretro's `mame2003-plus.xml`. The 22 MB list is downloaded once, slimmed
   to the ~650 KB the creator needs (BIOS sets marked hidden) and cached.
-- **Settings-file protection** — a snapshot of `minuisettings.txt` is taken
-  before the UI runs and restored if keys ever go missing (a leftover from the
-  NextUI-built minui-list days, kept as a safety net).
 
 ## Requirements
 

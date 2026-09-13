@@ -23,9 +23,7 @@
 #   - map.txt is also where "Rename Rom" stores user aliases, so the previous
 #     file is kept as a dot-prefixed backup (dotfiles are hidden from the list)
 #   - nxlist.elf (native/nxlist) is built inside the NX Redux workspace, so
-#     lists and messages render exactly like the launcher's Tools menu. The
-#     minuisettings.txt sandbox below predates it (the NextUI-built minui-list
-#     used to clobber the file) and is kept as a cheap safety net.
+#     lists and messages render exactly like the launcher's Tools menu
 PAK_DIR="$(cd "$(dirname "$0")" && pwd)"
 PAK_NAME="$(basename "$PAK_DIR")"
 PAK_NAME="${PAK_NAME%.*}"
@@ -90,49 +88,6 @@ MAME2003PLUS_LABEL="MAME 2003 Plus (libretro mame2003-plus.xml)"
 # hide them the same way it hides FBNeo BIOS entries.
 MAME2003PLUS_XML_URL="${MAME2003PLUS_XML_URL:-https://raw.githubusercontent.com/libretro/mame2003-plus-libretro/master/metadata/mame2003-plus.xml}"
 MAME2003PLUS_DAT="$DAT_CACHE_DIR/mame2003-plus.dat"
-
-# --- NX Redux settings-file protection -------------------------------------
-REAL_SHARED_USERDATA_PATH="${SHARED_USERDATA_PATH:-$SDCARD_PATH/.userdata/shared}"
-NX_SETTINGS="$REAL_SHARED_USERDATA_PATH/minuisettings.txt"
-SETTINGS_SANDBOX="$PAK_USERDATA/shared-sandbox"
-SETTINGS_SNAPSHOT="$PAK_USERDATA/minuisettings.snapshot"
-
-protect_settings() {
-    rm -rf "$SETTINGS_SANDBOX"
-    mkdir -p "$SETTINGS_SANDBOX"
-    if [ -f "$NX_SETTINGS" ]; then
-        cp -f "$NX_SETTINGS" "$SETTINGS_SNAPSHOT"
-        # a copy so anything that reads through the env var still sees the theme
-        cp -f "$NX_SETTINGS" "$SETTINGS_SANDBOX/minuisettings.txt"
-    fi
-    # only CFG_sync() consults this env var; every other NextUI path
-    # (msettings.bin, recents, ...) is compile-time or USERDATA_PATH based
-    export SHARED_USERDATA_PATH="$SETTINGS_SANDBOX"
-}
-
-# second line of defence, in case a future UI build writes through the
-# compile-time path too. The clobber's signature is a shrunken key set (the
-# NextUI 6.14 serializer drops every key it doesn't know); a legitimate
-# concurrent edit — the OSD overlay sed-ing wifi=/bluetooth= — changes values
-# but never removes keys, so only a key loss triggers the restore.
-restore_settings() {
-    export SHARED_USERDATA_PATH="$REAL_SHARED_USERDATA_PATH"
-    if [ -f "$SETTINGS_SNAPSHOT" ] && [ -f "$NX_SETTINGS" ] && ! cmp -s "$SETTINGS_SNAPSHOT" "$NX_SETTINGS"; then
-        sed -n 's/=.*//p' "$SETTINGS_SNAPSHOT" | sort -u >/tmp/nxsettings.snap.keys
-        sed -n 's/=.*//p' "$NX_SETTINGS" | sort -u >/tmp/nxsettings.cur.keys
-        lost_keys="$(grep -vxF -f /tmp/nxsettings.cur.keys /tmp/nxsettings.snap.keys)"
-        rm -f /tmp/nxsettings.snap.keys /tmp/nxsettings.cur.keys
-        if [ -n "$lost_keys" ]; then
-            echo "WARNING: minuisettings.txt lost keys during the run, restoring snapshot:" 1>&2
-            echo "$lost_keys" 1>&2
-            cp -f "$SETTINGS_SNAPSHOT" "$NX_SETTINGS"
-        else
-            echo "note: minuisettings.txt changed during the run (values only), keeping it" 1>&2
-        fi
-    fi
-    rm -f "$SETTINGS_SNAPSHOT" # holds credentials (RA login); don't leave a copy around
-    rm -rf "$SETTINGS_SANDBOX"
-}
 
 # --- shared helpers ---------------------------------------------------------
 
@@ -367,7 +322,6 @@ generate_map_txt() {
 # --- UI session ---------------------------------------------------------------
 
 cleanup() {
-    restore_settings
     rm -f /tmp/stay_awake
     rm -f /tmp/emus.list
     rm -f /tmp/action.*.list
@@ -377,7 +331,6 @@ cleanup() {
 main_ui() {
     echo "1" >/tmp/stay_awake
     trap "cleanup" EXIT INT TERM HUP QUIT
-    protect_settings
 
     allowed_platforms="tg5040 tg5050"
     if ! echo "$allowed_platforms" | grep -qw "$PLATFORM"; then

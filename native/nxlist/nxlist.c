@@ -591,7 +591,7 @@ int main(int argc, char* argv[]) {
 		} else if (!strcmp(a, "--disable-auto-sleep")) {
 			disable_auto_sleep = true;
 		} else if (!strcmp(a, "--item-key") || !strcmp(a, "--format") || !strcmp(a, "--write-value")) {
-			i++; // minui-list flags we accept and ignore
+			i++; // legacy flags, accepted and ignored
 		}
 		// anything else: ignored
 	}
