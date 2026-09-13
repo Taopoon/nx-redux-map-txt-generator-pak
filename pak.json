@@ -1,0 +1,14 @@
+{
+  "name": "Map.txt Generator",
+  "type": "TOOL",
+  "description": "Generates map.txt display-alias files for FBN (FinalBurn Neo) rom folders on NX Redux",
+  "author": "josegonzalez (original), NX Redux adaptation",
+  "repo_url": "https://github.com/josegonzalez/minui-map-txt-generator-pak",
+  "release_filename": "Map.txt.Generator.pak.zip",
+  "platforms": [
+    "tg5040",
+    "tg5050"
+  ],
+  "launch": "launch.sh",
+  "version": "0.3.0"
+}
