@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,6 +62,17 @@ static volatile sig_atomic_t got_signal = 0;
 static void on_signal(int sig) {
 	(void)sig;
 	got_signal = 1;
+}
+
+// unbuffered progress notes for the pak log (stderr)
+static void TRACE(const char* fmt, ...) {
+	va_list ap;
+	va_start(ap, fmt);
+	fputs("nxlist: ", stderr);
+	vfprintf(stderr, fmt, ap);
+	fputc('\n', stderr);
+	fflush(stderr);
+	va_end(ap);
 }
 
 // ---------------------------------------------------------------- lists
@@ -473,6 +485,7 @@ static int run_wizard(void) {
 		fprintf(stderr, "nxlist: --wizard needs at least one --step and --exec\n");
 		return 1;
 	}
+	TRACE("wizard start: %d steps, exec='%s'", step_count, exec_cmd);
 	if (!step_enter(0))
 		return 1;
 
@@ -487,25 +500,33 @@ static int run_wizard(void) {
 		PAD_poll();
 
 		ListViewAction act = UI_listViewHandleInput(&s->view);
-		if (act.type == LISTVIEW_MENU)
+		if (act.type == LISTVIEW_MENU) {
+			TRACE("menu -> exit 3");
 			return 3;
+		}
 		if (act.type == LISTVIEW_BACK) {
-			if (k == 0)
+			if (k == 0) {
+				TRACE("back on step 1 -> exit 2");
 				return 2;
+			}
 			k--;
+			TRACE("back to step %d", k + 1);
 			dirty = true;
 			continue;
 		}
 		if (act.type == LISTVIEW_ACTIVATED && act.index >= 0) {
 			s->selected = act.index;
+			TRACE("step %d selected %d '%s'", k + 1, act.index, s->list.items[act.index]);
 			if (k + 1 < step_count) {
 				if (step_enter(k + 1))
 					k++;
 				dirty = true;
 				continue;
 			}
-			run_exec(&run);
+			int code = run_exec(&run);
+			TRACE("exec finished with %d: %s | %s", code, run.result, run.detail);
 			wait_ok(&run);
+			TRACE("result acknowledged, back to step 1");
 			k = 0;
 			dirty = true;
 			continue;
@@ -581,6 +602,7 @@ int main(int argc, char* argv[]) {
 
 	signal(SIGTERM, on_signal);
 	signal(SIGINT, on_signal);
+	setvbuf(stdout, NULL, _IOLBF, 0); // the pak log is a file: don't sit on NX Redux's printf output
 
 	PATHS_init(PLATFORM);
 	screen = GFX_init(MODE_MAIN);
@@ -589,6 +611,8 @@ int main(int argc, char* argv[]) {
 	PWR_init();
 	if (disable_auto_sleep)
 		PWR_disableAutosleep();
+	TRACE("init done (%dx%d), mode=%s", screen ? screen->w : 0, screen ? screen->h : 0,
+		  wizard ? "wizard" : message ? "message" : "list");
 
 	int rc;
 	if (wizard)
