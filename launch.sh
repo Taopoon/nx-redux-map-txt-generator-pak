@@ -2,7 +2,17 @@
 # Map.txt Generator.pak — NX Redux edition
 #
 # Wraps minui-map-txt-creator to build `map.txt` display-alias files for
-# FinalBurn Neo rom folders (any folder under Roms tagged "(FBN)").
+# FinalBurn Neo / MAME 2003 Plus rom folders (Roms/* tagged (FBN) or (MAME…)).
+#
+# Two entry points:
+#   launch.sh                    UI session. Prepares the list files and runs
+#                                bin/<platform>/nxlist.elf --wizard ONCE; that
+#                                single process owns the display for the whole
+#                                session (no black-outs between screens).
+#   launch.sh --generate F D     called BY nxlist (popen) when the user picks
+#                                folder F and dat D on the last wizard step.
+#                                stdout is the UI protocol (@MSG / @RESULT /
+#                                @DETAIL lines), stderr goes to the log.
 #
 # NX Redux specifics honoured here (see nx-redux/.dev/PAKS.md):
 #   - flat pak layout: this pak lives at /Tools/Map.txt Generator.pak
@@ -12,21 +22,29 @@
 #     $SHARED_SYSTEM_PATH/ssl/ca-certificates.crt
 #   - map.txt is also where "Rename Rom" stores user aliases, so the previous
 #     file is kept as a dot-prefixed backup (dotfiles are hidden from the list)
-#   - the UI is bin/<platform>/nxlist.elf (native/nxlist, built inside the
-#     NX Redux workspace) so lists and messages render exactly like the
-#     launcher's Tools menu. The minuisettings.txt sandbox below predates it
-#     (the NextUI-built minui-list used to clobber the file) and is kept as a
-#     cheap safety net: NX Redux's own CFG_init never writes during load.
-set -x
-PAK_DIR="$(dirname "$0")"
+#   - nxlist.elf (native/nxlist) is built inside the NX Redux workspace, so
+#     lists and messages render exactly like the launcher's Tools menu. The
+#     minuisettings.txt sandbox below predates it (the NextUI-built minui-list
+#     used to clobber the file) and is kept as a cheap safety net.
+PAK_DIR="$(cd "$(dirname "$0")" && pwd)"
 PAK_NAME="$(basename "$PAK_DIR")"
 PAK_NAME="${PAK_NAME%.*}"
 
-rm -f "$LOGS_PATH/$PAK_NAME.txt"
-exec >>"$LOGS_PATH/$PAK_NAME.txt"
-exec 2>&1
+MODE=ui
+if [ "$1" = "--generate" ]; then
+    MODE=generate
+    shift
+fi
 
-echo "$0" "$@"
+if [ "$MODE" = "ui" ]; then
+    rm -f "$LOGS_PATH/$PAK_NAME.txt"
+    exec >>"$LOGS_PATH/$PAK_NAME.txt"
+    exec 2>&1
+    echo "$0" "$@"
+fi
+# --generate: stdout is nxlist's pipe, stderr is already the log (inherited)
+set -x
+
 cd "$PAK_DIR" || exit 1
 
 PAK_USERDATA="$USERDATA_PATH/$PAK_NAME"
@@ -60,6 +78,7 @@ if [ -n "$FBN_DAT_REF" ]; then
     REF_ARGS="-ref $FBN_DAT_REF"
 fi
 
+APP_TITLE="Map.txt Generator"
 LOCAL_DAT_LABEL="Use local dat files (dats folder)"
 ALL_DATS_LABEL="Use every Dat File"
 MAME2003PLUS_LABEL="MAME 2003 Plus (libretro mame2003-plus.xml)"
@@ -115,18 +134,7 @@ restore_settings() {
     rm -rf "$SETTINGS_SANDBOX"
 }
 
-# Stop any nxlist.elf (a background --message) and wait for it to exit:
-# each instance owns the display and spawns fancontrol via PWR_init, so
-# starting the next one before the previous finished cleanup logs
-# "Another instance of fancontrol is still running" and flickers.
-stop_ui() {
-    killall nxlist.elf >/dev/null 2>&1 || true
-    i=0
-    while pidof nxlist.elf >/dev/null 2>&1 && [ $i -lt 20 ]; do
-        sleep 0.05
-        i=$((i + 1))
-    done
-}
+# --- shared helpers ---------------------------------------------------------
 
 # local dats: ClrMame Pro XML files, either *.dat (FBNeo naming) or *.xml
 has_local_dats() {
@@ -142,62 +150,40 @@ is_mame_folder() {
     echo "$1" | grep -qE '\(MAME[A-Z0-9]*\)'
 }
 
-main_screen() {
-    rm -f "/tmp/minui-output"
-
-    if [ ! -f "/tmp/emus.list" ]; then
-        populate_emus_list
-    fi
-
-    if [ ! -s "/tmp/emus.list" ]; then
-        show_message "No (FBN) folder found in Roms" 3
-        return 2
-    fi
-
-    stop_ui
-    nxlist.elf --disable-auto-sleep --file "/tmp/emus.list" --title "Select ROM Folder for map.txt" --cancel-text "EXIT" --confirm-text "SELECT" --write-location /tmp/minui-output
-}
-
-action_menu() {
+# The dat choices for one rom folder (wizard step 2), one label per line.
+print_action_list() {
     ROM_FOLDER="$1"
-
-    rm -f /tmp/action.list /tmp/action-output
-
-    {
-        if is_mame_folder "$ROM_FOLDER"; then
-            echo "$MAME2003PLUS_LABEL"
-        fi
-        if has_local_dats; then
-            echo "$LOCAL_DAT_LABEL"
-        fi
-        echo "$ALL_DATS_LABEL"
-        echo "Arcade"
-        echo "ColecoVision"
-        echo "FDS Games"
-        echo "Fairchild Channel F Games"
-        echo "Game Gear"
-        echo "MSX 1 Games"
-        echo "Master System"
-        echo "Megadrive"
-        echo "NES Games"
-        echo "NeoGeo Pocket Games"
-        echo "Neogeo"
-        echo "PC-Engine"
-        echo "Sega SG-1000"
-        echo "SuprGrafx"
-        echo "TurboGrafx16"
-        echo "ZX Spectrum Games"
-    } >>/tmp/action.list
-
-    stop_ui
-    nxlist.elf --disable-auto-sleep --file "/tmp/action.list" --title "Select Dat File for $ROM_FOLDER" --cancel-text "BACK" --confirm-text "SELECT" --write-location /tmp/action-output
-
-    if [ $? -ne 0 ]; then
-        return 1
+    if is_mame_folder "$ROM_FOLDER"; then
+        echo "$MAME2003PLUS_LABEL"
     fi
-
-    return 0
+    if has_local_dats; then
+        echo "$LOCAL_DAT_LABEL"
+    fi
+    echo "$ALL_DATS_LABEL"
+    echo "Arcade"
+    echo "ColecoVision"
+    echo "FDS Games"
+    echo "Fairchild Channel F Games"
+    echo "Game Gear"
+    echo "MSX 1 Games"
+    echo "Master System"
+    echo "Megadrive"
+    echo "NES Games"
+    echo "NeoGeo Pocket Games"
+    echo "Neogeo"
+    echo "PC-Engine"
+    echo "Sega SG-1000"
+    echo "SuprGrafx"
+    echo "TurboGrafx16"
+    echo "ZX Spectrum Games"
 }
+
+# --- --generate: UI protocol on stdout ---------------------------------------
+# nxlist shows @MSG while the command runs, then @RESULT (+ @DETAIL) on the
+# result screen until the user presses A.
+ui_msg() { echo "@MSG $*"; }
+ui_result() { echo "@RESULT $*"; }
+ui_detail() { echo "@DETAIL $*"; }
 
 # Keep the previous map.txt (it may hold "Rename Rom" aliases). Dot-prefixed
 # so NX Redux hides it from the game list.
@@ -229,6 +215,7 @@ log_net_state() {
     } 1>&2
 }
 
+# On failure prints the @RESULT/@DETAIL pair and returns 1.
 net_preflight() {
     [ -n "$MAPTXT_SKIP_NETCHECK" ] && return 0 # host-side tests only
     log_net_state
@@ -238,15 +225,17 @@ net_preflight() {
     # udhcpc once more before giving up. -n: exit on failure, -q: exit once
     # a lease is obtained, -t/-T: 3 tries x 3 s.
     if $WPA_CLI status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
-        show_message "WiFi connected, waiting for IP address..." forever
+        ui_msg "WiFi connected, waiting for IP address..."
         udhcpc -i "$WIFI_IF" -n -q -t 3 -T 3 >/dev/null 2>&1
         log_net_state
         has_nameserver && return 0
-        show_message "WiFi joined but no IP/DNS from router. Reconnect in Settings > WiFi" 4
+        ui_result "No network"
+        ui_detail "WiFi joined but no IP/DNS from the router. Reconnect in Settings > WiFi"
         return 1
     fi
 
-    show_message "WiFi not connected. Join a network in Settings > WiFi first" 4
+    ui_result "No network"
+    ui_detail "WiFi not connected. Join a network in Settings > WiFi first"
     return 1
 }
 
@@ -268,14 +257,16 @@ fetch_url() {
 
 ensure_mame2003plus_dat() {
     [ -s "$MAME2003PLUS_DAT" ] && return 0
-    show_message "Downloading MAME 2003 Plus game list (22 MB)..." forever
+    ui_msg "Downloading MAME 2003 Plus game list (22 MB)..."
     xml="$DAT_CACHE_DIR/mame2003-plus.xml.part"
     rm -f "$xml"
     if ! fetch_url "$MAME2003PLUS_XML_URL" "$xml" || [ ! -s "$xml" ]; then
         rm -f "$xml"
-        show_message "Download of mame2003-plus.xml failed (see log)" 3
+        ui_result "Download of mame2003-plus.xml failed"
+        ui_detail "Check the WiFi connection and the log"
         return 1
     fi
+    ui_msg "Preparing MAME 2003 Plus game list..."
     {
         echo '<datafile>'
         grep -E '<game |<description>|</game>' "$xml" | sed 's/runnable="no"/isbios="yes"/'
@@ -284,12 +275,31 @@ ensure_mame2003plus_dat() {
     rm -f "$xml"
     if ! grep -q '<game ' "$MAME2003PLUS_DAT.tmp"; then
         rm -f "$MAME2003PLUS_DAT.tmp"
-        show_message "mame2003-plus.xml had no game entries" 3
+        ui_result "mame2003-plus.xml had no game entries"
         return 1
     fi
     mv -f "$MAME2003PLUS_DAT.tmp" "$MAME2003PLUS_DAT"
     echo "cached $(grep -c '<game ' "$MAME2003PLUS_DAT") games -> $MAME2003PLUS_DAT" 1>&2
     return 0
+}
+
+# "N / M ROMs mapped · B BIOS hidden · U unmatched" for the result screen;
+# the unmatched names go to the log.
+print_summary() {
+    ROMS_DIR="$1"
+    MAP_FILE="$2"
+    total=$(find "$ROMS_DIR" -maxdepth 1 -type f ! -name '.*' ! -name 'map.txt' 2>/dev/null | wc -l)
+    mapped=$(grep -c . "$MAP_FILE" 2>/dev/null)
+    hidden=$(grep -c "^[^	]*	\." "$MAP_FILE" 2>/dev/null)
+    unmatched=$((total - mapped))
+    [ "$unmatched" -lt 0 ] && unmatched=0
+    if [ "$unmatched" -gt 0 ]; then
+        cut -f1 "$MAP_FILE" >/tmp/maptxt.keys
+        echo "--- $unmatched ROM(s) not in the dat:" 1>&2
+        ls -Ap "$ROMS_DIR" | grep -v '/$' | grep -v '^\.' | grep -vx 'map.txt' | grep -vxF -f /tmp/maptxt.keys 1>&2
+        rm -f /tmp/maptxt.keys
+    fi
+    ui_detail "$mapped / $total ROMs mapped  ·  $hidden BIOS hidden  ·  $unmatched unmatched"
 }
 
 generate_map_txt() {
@@ -298,6 +308,12 @@ generate_map_txt() {
 
     ROMS_DIR="$SDCARD_PATH/Roms/$ROM_FOLDER"
     MAP_FILE="$ROMS_DIR/map.txt"
+
+    if [ ! -d "$ROMS_DIR" ]; then
+        ui_result "Folder not found"
+        ui_detail "$ROMS_DIR"
+        return 1
+    fi
 
     if [ "$FBN_DAT_FILE" != "$LOCAL_DAT_LABEL" ]; then
         net_preflight || return 1
@@ -308,33 +324,34 @@ generate_map_txt() {
     exit_code=0
     if [ "$FBN_DAT_FILE" = "$MAME2003PLUS_LABEL" ]; then
         ensure_mame2003plus_dat || return 1
-        show_message "Generating map.txt for $ROM_FOLDER with MAME 2003 Plus list" forever
-        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -dat "$MAME2003PLUS_DAT"
+        ui_msg "Generating map.txt for $ROM_FOLDER with MAME 2003 Plus list"
+        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -dat "$MAME2003PLUS_DAT" 1>&2
         exit_code=$?
     elif [ "$FBN_DAT_FILE" = "$LOCAL_DAT_LABEL" ]; then
-        show_message "Generating map.txt for $ROM_FOLDER with local dat files" forever
+        ui_msg "Generating map.txt for $ROM_FOLDER with local dat files"
         # build the arg list positionally so paths with spaces/parens survive
         set -- -roms "$ROMS_DIR" -map "$MAP_FILE"
         for dat in "$LOCAL_DAT_DIR"/*.dat "$LOCAL_DAT_DIR"/*.xml; do
             [ -f "$dat" ] || continue # unmatched glob stays literal
             set -- "$@" -dat "$dat"
         done
-        minui-map-txt-creator "$@"
+        minui-map-txt-creator "$@" 1>&2
         exit_code=$?
     elif [ "$FBN_DAT_FILE" = "$ALL_DATS_LABEL" ]; then
-        show_message "Generating map.txt for $ROM_FOLDER with every dat file" forever
+        ui_msg "Generating map.txt for $ROM_FOLDER with every dat file"
         # shellcheck disable=SC2086
-        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -cache-dir "$DAT_CACHE_DIR" $TLS_ARGS $REF_ARGS -all-dats
+        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -cache-dir "$DAT_CACHE_DIR" $TLS_ARGS $REF_ARGS -all-dats 1>&2
         exit_code=$?
     else
-        show_message "Generating map.txt for $ROM_FOLDER with $FBN_DAT_FILE dat file" forever
+        ui_msg "Generating map.txt for $ROM_FOLDER with $FBN_DAT_FILE dat file"
         # shellcheck disable=SC2086
-        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -cache-dir "$DAT_CACHE_DIR" $TLS_ARGS $REF_ARGS -dat-name "FinalBurn Neo (ClrMame Pro XML, $FBN_DAT_FILE only).dat"
+        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -cache-dir "$DAT_CACHE_DIR" $TLS_ARGS $REF_ARGS -dat-name "FinalBurn Neo (ClrMame Pro XML, $FBN_DAT_FILE only).dat" 1>&2
         exit_code=$?
     fi
 
     if [ $exit_code -ne 0 ]; then
-        show_message "Failed to generate map.txt for $ROM_FOLDER (see log)" 3
+        ui_result "Failed to generate map.txt for $ROM_FOLDER"
+        ui_detail "See the log in .userdata/$PLATFORM/logs"
         return $exit_code
     fi
 
@@ -342,38 +359,22 @@ generate_map_txt() {
     # folder mtime anyway so any mtime-fingerprinted cache notices the change.
     touch "$ROMS_DIR" 2>/dev/null || true
 
-    show_message "Map.txt generated for $ROM_FOLDER" 2
+    ui_result "Map.txt generated for $ROM_FOLDER"
+    print_summary "$ROMS_DIR" "$MAP_FILE"
     return 0
 }
 
-show_message() {
-    message="$1"
-    seconds="$2"
-
-    if [ -z "$seconds" ]; then
-        seconds="forever"
-    fi
-
-    stop_ui
-    echo "$message" 1>&2
-    if [ "$seconds" = "forever" ]; then
-        nxlist.elf --message "$message" --timeout -1 &
-    else
-        nxlist.elf --message "$message" --timeout "$seconds"
-    fi
-}
+# --- UI session ---------------------------------------------------------------
 
 cleanup() {
     restore_settings
     rm -f /tmp/stay_awake
     rm -f /tmp/emus.list
-    rm -f /tmp/minui-output
-    rm -f /tmp/action.list
-    rm -f /tmp/action-output
+    rm -f /tmp/action.*.list
     killall nxlist.elf >/dev/null 2>&1 || true
 }
 
-main() {
+main_ui() {
     echo "1" >/tmp/stay_awake
     trap "cleanup" EXIT INT TERM HUP QUIT
     protect_settings
@@ -390,36 +391,39 @@ main() {
     fi
 
     if ! command -v minui-map-txt-creator >/dev/null 2>&1; then
-        show_message "minui-map-txt-creator not found" 2
+        echo "minui-map-txt-creator not found" 1>&2
         return 1
     fi
 
     chmod +x "$PAK_DIR/bin/$PLATFORM/nxlist.elf"
     chmod +x "$PAK_DIR/bin/$architecture/minui-map-txt-creator"
 
-    while true; do
-        main_screen
-        exit_code=$?
-        # exit codes: 2 = back button, 3 = menu button
-        if [ "$exit_code" -ne 0 ]; then
-            break
-        fi
+    populate_emus_list
+    if [ ! -s /tmp/emus.list ]; then
+        nxlist.elf --message "No (FBN) or (MAME) folder found in Roms" --timeout 3
+        return 2
+    fi
 
-        selection="$(cat /tmp/minui-output)"
-        if [ -z "$selection" ]; then
-            show_message "No selection made" forever
-            continue
-        fi
+    # step-2 lists, one per folder, picked by nxlist via the %d placeholder
+    rm -f /tmp/action.*.list
+    i=0
+    while IFS= read -r folder; do
+        print_action_list "$folder" >"/tmp/action.$i.list"
+        i=$((i + 1))
+    done </tmp/emus.list
 
-        # Show action menu
-        action_menu "$selection"
-        if [ $? -ne 0 ]; then
-            continue
-        fi
-
-        fbn_dat_file="$(cat /tmp/action-output)"
-        generate_map_txt "$selection" "$fbn_dat_file"
-    done
+    nxlist.elf --wizard --disable-auto-sleep \
+        --app-title "$APP_TITLE" \
+        --step "Select ROM Folder for map.txt|EXIT|/tmp/emus.list" \
+        --step "Select Dat File for %s|BACK|/tmp/action.%d.list" \
+        --exec "'$PAK_DIR/launch.sh' --generate"
+    # exit codes: 2 = EXIT (B), 3 = MENU
+    return $?
 }
 
-main "$@"
+if [ "$MODE" = "generate" ]; then
+    generate_map_txt "$1" "$2"
+    exit $?
+fi
+
+main_ui "$@"

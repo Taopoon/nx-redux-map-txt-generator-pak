@@ -56,13 +56,17 @@ Adapted from [josegonzalez/minui-map-txt-generator-pak](https://github.com/joseg
 
 ## Usage
 
-Browse to `Tools > Map.txt Generator` and press `A`.
+Browse to `Tools > Map.txt Generator` and press `A`. The whole session runs in
+one `nxlist.elf --wizard` process, so there are no black-outs between screens
+and `B` steps back to the previous screen.
 
 1. Pick the `(FBN)` / `(MAME2003PLUS)` rom folder.
 2. Pick a dat file: *MAME 2003 Plus* (MAME folders), a specific FBNeo system
    (Arcade, Neogeo, …), *Use every Dat File*, or *Use local dat files* if you
    put any into `dats/`.
-3. Wait for "Map.txt generated". Open the rom folder — names are now aliases.
+3. A status screen shows progress; the result screen reports
+   `N / M ROMs mapped · B BIOS hidden · U unmatched` (unmatched names are in
+   the log). Press `A` to return to the folder list.
 
 BIOS sets are written with a leading `.`, which hides them from the list.
 
