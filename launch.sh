@@ -136,18 +136,41 @@ backup_map_txt() {
 # /etc/resolv.conf (written by udhcpc when NX Redux joins a WiFi network).
 # With no nameserver it dials [::1]:53 and fails with "connection refused",
 # so check up front and tell the user instead of failing mid-run.
-net_preflight() {
+WIFI_IF="wlan0"
+WPA_CLI="wpa_cli -p /etc/wifi/sockets -i $WIFI_IF" # socket path from NX Redux wifi_init.sh
+
+has_nameserver() {
+    grep -q '^nameserver' /etc/resolv.conf 2>/dev/null
+}
+
+log_net_state() {
     {
         echo "--- network state"
         cat /etc/resolv.conf 2>/dev/null || echo "(no /etc/resolv.conf)"
-        ifconfig wlan0 2>/dev/null | grep -E 'inet |UP' || echo "(wlan0 down)"
+        ifconfig "$WIFI_IF" 2>/dev/null | grep -E 'inet |UP' || echo "($WIFI_IF down)"
+        $WPA_CLI status 2>/dev/null | grep -E '^(wpa_state|ssid|ip_address)=' || echo "(wpa_supplicant not reachable)"
         echo "---"
     } 1>&2
-    if ! grep -q '^nameserver' /etc/resolv.conf 2>/dev/null; then
-        show_message "No network. Connect to WiFi in Settings first" 4
+}
+
+net_preflight() {
+    log_net_state
+    has_nameserver && return 0
+
+    # Associated to an AP but no lease yet (e.g. just woke from sleep): ask
+    # udhcpc once more before giving up. -n: exit on failure, -q: exit once
+    # a lease is obtained, -t/-T: 3 tries x 3 s.
+    if $WPA_CLI status 2>/dev/null | grep -q '^wpa_state=COMPLETED'; then
+        show_message "WiFi connected, waiting for IP address..." forever
+        udhcpc -i "$WIFI_IF" -n -q -t 3 -T 3 >/dev/null 2>&1
+        log_net_state
+        has_nameserver && return 0
+        show_message "WiFi joined but no IP/DNS from router. Reconnect in Settings > WiFi" 4
         return 1
     fi
-    return 0
+
+    show_message "WiFi not connected. Join a network in Settings > WiFi first" 4
+    return 1
 }
 
 generate_map_txt() {
