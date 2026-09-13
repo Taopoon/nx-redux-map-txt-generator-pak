@@ -132,12 +132,34 @@ backup_map_txt() {
     fi
 }
 
+# minui-map-txt-creator is a static Go binary: its resolver reads only
+# /etc/resolv.conf (written by udhcpc when NX Redux joins a WiFi network).
+# With no nameserver it dials [::1]:53 and fails with "connection refused",
+# so check up front and tell the user instead of failing mid-run.
+net_preflight() {
+    {
+        echo "--- network state"
+        cat /etc/resolv.conf 2>/dev/null || echo "(no /etc/resolv.conf)"
+        ifconfig wlan0 2>/dev/null | grep -E 'inet |UP' || echo "(wlan0 down)"
+        echo "---"
+    } 1>&2
+    if ! grep -q '^nameserver' /etc/resolv.conf 2>/dev/null; then
+        show_message "No network. Connect to WiFi in Settings first" 4
+        return 1
+    fi
+    return 0
+}
+
 generate_map_txt() {
     ROM_FOLDER="$1"
     FBN_DAT_FILE="$2"
 
     ROMS_DIR="$SDCARD_PATH/Roms/$ROM_FOLDER"
     MAP_FILE="$ROMS_DIR/map.txt"
+
+    if [ "$FBN_DAT_FILE" != "$LOCAL_DAT_LABEL" ]; then
+        net_preflight || return 1
+    fi
 
     backup_map_txt "$MAP_FILE"
 
