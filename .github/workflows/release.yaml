@@ -143,7 +143,8 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add pak.json
-          git commit -m "Release $RELEASE_VERSION"
+          # pak.json may already carry this version (bumped by hand): tag anyway
+          git diff --cached --quiet || git commit -m "Release $RELEASE_VERSION"
           git tag "$RELEASE_VERSION"
           git push origin "$RELEASE_VERSION"
           git push origin main
