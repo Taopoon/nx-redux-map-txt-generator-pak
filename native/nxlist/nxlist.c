@@ -1,4 +1,4 @@
-// nxlist - list picker / message / wizard screens for NX Redux tool paks.
+// nxlist - wizard / message screens for NX Redux tool paks.
 //
 // Built inside the NX Redux workspace (see ../../.github/workflows/native.yaml)
 // so it draws with the same toolkit as the launcher's Tools menu: the
@@ -7,11 +7,6 @@
 // workspace/all/scraper/scraper.c (Artwork Manager).
 //
 // Modes
-//   list:    nxlist.elf --file <list.txt> --title <t> [--cancel-text EXIT]
-//                       [--confirm-text SELECT] --write-location <out>
-//            exit 0 = A on a row (label written), 2 = B, 3 = MENU
-//   message: nxlist.elf --message <text> [--timeout <secs>|-1]
-//            -1 (default) shows until killed (SIGTERM/SIGINT exit cleanly)
 //   wizard:  nxlist.elf --wizard [--app-title <t>]
 //                       --step "<title>|<cancel>|<listfile>" ...
 //                       --exec "<command>"
@@ -27,8 +22,9 @@
 //                                   @DETAIL <text>  result second line
 //            (other lines are forwarded to stderr). The result screen waits
 //            for A (OK), then the wizard returns to the first step.
-// Common:    --disable-auto-sleep. Unknown flags are ignored (--item-key,
-//            --format, --write-value ...).
+//   message: nxlist.elf --message <text> [--timeout <secs>|-1]
+//            -1 (default) shows until killed (SIGTERM/SIGINT exit cleanly)
+// Common:    --disable-auto-sleep
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -64,7 +60,7 @@ static void on_signal(int sig) {
 	got_signal = 1;
 }
 
-// unbuffered progress notes for the pak log (stderr)
+// progress notes for the pak log (stderr, flushed immediately)
 static void TRACE(const char* fmt, ...) {
 	va_list ap;
 	va_start(ap, fmt);
@@ -103,9 +99,8 @@ static int list_load(ItemList* l, const char* path) {
 		size_t n = strlen(line);
 		while (n && (line[n - 1] == '\n' || line[n - 1] == '\r'))
 			line[--n] = '\0';
-		if (!n)
-			continue;
-		l->items[l->count++] = strdup(line);
+		if (n)
+			l->items[l->count++] = strdup(line);
 	}
 	fclose(f);
 	return l->count;
@@ -119,7 +114,8 @@ static void list_get_row(void* ctx, int i, bool selected, ListViewRow* out) {
 
 // --------------------------------------------------------- frame helpers
 
-// Standard NX Redux idle/dirty frame tail (scraper.c main loop).
+// Standard NX Redux idle/dirty frame tail (scraper.c main loop): power and
+// status-bar bookkeeping, redraw when dirty, otherwise idle-tick and sync.
 static void frame_end(ListView* v, bool* dirty, IndicatorType* show_setting, void (*render)(void*), void* ctx) {
 	PWR_update(dirty, show_setting, NULL, NULL);
 	if (UI_statusBarChanged())
@@ -147,13 +143,12 @@ static void render_listview(void* ctx) {
 static void render_text_screen(const char* bar_title, const char* headline, const char* detail, char** hints) {
 	GFX_clear(screen);
 	UI_renderMenuBar(screen, bar_title);
+	bool has_detail = detail && detail[0];
 	int title_h = TTF_FontHeight(font.large);
-	int total_h = title_h;
-	if (detail && detail[0])
-		total_h += SCALE1(4) + TTF_FontHeight(font.small);
-	int y = (screen->h - total_h) / 2;
+	int detail_h = has_detail ? SCALE1(4) + TTF_FontHeight(font.small) : 0;
+	int y = (screen->h - title_h - detail_h) / 2;
 	GFX_blitMessage(font.large, (char*)headline, screen, &(SDL_Rect){0, y, screen->w, title_h});
-	if (detail && detail[0]) {
+	if (has_detail) {
 		y += title_h + SCALE1(4);
 		GFX_blitMessage(font.small, (char*)detail, screen, &(SDL_Rect){0, y, screen->w, TTF_FontHeight(font.small)});
 	}
@@ -162,67 +157,13 @@ static void render_text_screen(const char* bar_title, const char* headline, cons
 	GFX_flip(screen);
 }
 
-// ------------------------------------------------------------- list mode
-
-static int run_list(const char* file, const char* title, const char* cancel_text,
-					const char* confirm_text, const char* write_location) {
-	static ItemList list;
-	if (list_load(&list, file) < 0) {
-		fprintf(stderr, "nxlist: cannot read %s\n", file);
-		return 1;
-	}
-	static char* hint_pairs[5];
-	hint_pairs[0] = "B";
-	hint_pairs[1] = (char*)cancel_text;
-	hint_pairs[2] = "A";
-	hint_pairs[3] = (char*)confirm_text;
-	hint_pairs[4] = NULL;
-
-	static ListView view;
-	UI_listViewReset(&view, list.count, list.items);
-	view.title = title;
-	view.font = font.large;
-	view.count = list.count;
-	view.get_row = list_get_row;
-	view.ctx = &list;
-	view.list_id = (const void*)list.items;
-	view.hint_pairs = hint_pairs;
-	view.empty_title = "Nothing to select";
-
-	int rc = 2;
-	bool dirty = true;
-	IndicatorType show_setting = INDICATOR_NONE;
-
-	while (!got_signal) {
-		GFX_startFrame();
-		PAD_poll();
-
-		ListViewAction act = UI_listViewHandleInput(&view);
-		if (act.type == LISTVIEW_ACTIVATED && act.index >= 0) {
-			if (write_location) {
-				FILE* out = fopen(write_location, "w");
-				if (out) {
-					fprintf(out, "%s\n", list.items[act.index]);
-					fclose(out);
-				}
-			}
-			rc = 0;
-			break;
-		}
-		if (act.type == LISTVIEW_BACK) {
-			rc = 2;
-			break;
-		}
-		if (act.type == LISTVIEW_MENU) {
-			rc = 3;
-			break;
-		}
-		frame_end(&view, &dirty, &show_setting, render_listview, &view);
-	}
-	return rc;
-}
-
 // ---------------------------------------------------------- message mode
+
+static void render_message(void* ctx) {
+	GFX_clear(screen);
+	UI_renderCenteredMessage(screen, (const char*)ctx);
+	GFX_flip(screen);
+}
 
 static int run_message(const char* message, int timeout_secs) {
 	bool dirty = true;
@@ -234,15 +175,7 @@ static int run_message(const char* message, int timeout_secs) {
 			break;
 		GFX_startFrame();
 		PAD_poll();
-		PWR_update(&dirty, &show_setting, NULL, NULL);
-		if (dirty) {
-			GFX_clear(screen);
-			UI_renderCenteredMessage(screen, message);
-			GFX_flip(screen);
-			dirty = false;
-		} else {
-			GFX_sync();
-		}
+		frame_end(NULL, &dirty, &show_setting, render_message, (void*)message);
 	}
 	return 0;
 }
@@ -291,16 +224,15 @@ static void expand(const char* tpl, const char* label, int index, char* out, siz
 // Parse "<title>|<cancel>|<file>" into a step.
 static bool step_parse(Step* s, const char* spec) {
 	char* copy = strdup(spec);
-	char* a = copy;
-	char* b = strchr(a, '|');
-	if (!b)
+	char* b = strchr(copy, '|');
+	char* c = b ? strchr(b + 1, '|') : NULL;
+	if (!b || !c) {
+		free(copy);
 		return false;
+	}
 	*b++ = '\0';
-	char* c = strchr(b, '|');
-	if (!c)
-		return false;
 	*c++ = '\0';
-	s->title_tpl = a;
+	s->title_tpl = copy;
 	s->cancel_text = b;
 	s->file_tpl = c;
 	s->selected = -1;
@@ -326,6 +258,7 @@ static bool step_enter(int k) {
 		return false;
 	}
 	TRACE("step %d: '%s' (%d items from %s)", k + 1, s->title, s->list.count, s->file);
+
 	s->hints[0] = "B";
 	s->hints[1] = (char*)s->cancel_text;
 	s->hints[2] = "A";
@@ -373,6 +306,12 @@ static void render_running(void* ctx) {
 	render_text_screen(app_title, r->status, NULL, NULL);
 }
 
+static void render_result(void* ctx) {
+	RunState* r = ctx;
+	static char* ok_hints[] = {"A", "OK", NULL};
+	render_text_screen(app_title, r->result, r->detail, ok_hints);
+}
+
 // Consume one complete stdout line from the child.
 static void handle_child_line(RunState* r, char* line, bool* dirty) {
 	if (!strncmp(line, "@MSG ", 5)) {
@@ -398,7 +337,7 @@ static int run_exec(RunState* r) {
 		shell_quote(steps[k].list.items[steps[k].selected], q, sizeof(q));
 		o += snprintf(cmd + o, sizeof(cmd) - o, " %s", q);
 	}
-	fprintf(stderr, "nxlist: exec %s\n", cmd);
+	TRACE("exec %s", cmd);
 
 	snprintf(r->status, sizeof(r->status), "Working...");
 	r->result[0] = r->detail[0] = '\0';
@@ -409,6 +348,7 @@ static int run_exec(RunState* r) {
 		snprintf(r->detail, sizeof(r->detail), "%s", strerror(errno));
 		return 1;
 	}
+	// non-blocking so the frame loop keeps running while the child works
 	int fd = fileno(fp);
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
 
@@ -461,12 +401,6 @@ static int run_exec(RunState* r) {
 	return code;
 }
 
-static void render_result(void* ctx) {
-	RunState* r = ctx;
-	static char* ok_hints[] = {"A", "OK", NULL};
-	render_text_screen(app_title, r->result, r->detail, ok_hints);
-}
-
 // Result screen: wait for A (or B).
 static void wait_ok(RunState* r) {
 	bool dirty = true;
@@ -483,7 +417,7 @@ static void wait_ok(RunState* r) {
 
 static int run_wizard(void) {
 	if (step_count == 0 || !exec_cmd) {
-		fprintf(stderr, "nxlist: --wizard needs at least one --step and --exec\n");
+		TRACE("--wizard needs at least one --step and --exec");
 		return 1;
 	}
 	TRACE("wizard start: %d steps, exec='%s'", step_count, exec_cmd);
@@ -527,7 +461,6 @@ static int run_wizard(void) {
 			int code = run_exec(&run);
 			TRACE("exec finished with %d: %s | %s", code, run.result, run.detail);
 			wait_ok(&run);
-			TRACE("result acknowledged, back to step 1");
 			k = 0;
 			dirty = true;
 			continue;
@@ -540,11 +473,6 @@ static int run_wizard(void) {
 // ------------------------------------------------------------------ main
 
 int main(int argc, char* argv[]) {
-	const char* file = NULL;
-	const char* title = "";
-	const char* cancel_text = "BACK";
-	const char* confirm_text = "SELECT";
-	const char* write_location = NULL;
 	const char* message = NULL;
 	int timeout_secs = -1;
 	bool disable_auto_sleep = false;
@@ -553,51 +481,37 @@ int main(int argc, char* argv[]) {
 	for (int i = 1; i < argc; i++) {
 		const char* a = argv[i];
 		const char* v = (i + 1 < argc) ? argv[i + 1] : NULL;
-		if (!strcmp(a, "--file") && v) {
-			file = v;
-			i++;
-		} else if (!strcmp(a, "--title") && v) {
-			title = v;
-			i++;
-		} else if (!strcmp(a, "--cancel-text") && v) {
-			cancel_text = v;
-			i++;
-		} else if (!strcmp(a, "--confirm-text") && v) {
-			confirm_text = v;
-			i++;
-		} else if (!strcmp(a, "--write-location") && v) {
-			write_location = v;
-			i++;
-		} else if (!strcmp(a, "--message") && v) {
-			message = v;
-			i++;
-		} else if (!strcmp(a, "--timeout") && v) {
-			timeout_secs = atoi(v);
-			i++;
-		} else if (!strcmp(a, "--wizard")) {
+		if (!strcmp(a, "--wizard")) {
 			wizard = true;
-		} else if (!strcmp(a, "--app-title") && v) {
+		} else if (!strcmp(a, "--disable-auto-sleep")) {
+			disable_auto_sleep = true;
+		} else if (!v) {
+			TRACE("ignoring '%s' (missing value)", a);
+		} else if (!strcmp(a, "--app-title")) {
 			app_title = v;
 			i++;
-		} else if (!strcmp(a, "--step") && v) {
+		} else if (!strcmp(a, "--step")) {
 			if (step_count < MAX_STEPS && step_parse(&steps[step_count], v))
 				step_count++;
 			else
-				fprintf(stderr, "nxlist: bad --step '%s'\n", v);
+				TRACE("bad --step '%s'", v);
 			i++;
-		} else if (!strcmp(a, "--exec") && v) {
+		} else if (!strcmp(a, "--exec")) {
 			exec_cmd = v;
 			i++;
-		} else if (!strcmp(a, "--disable-auto-sleep")) {
-			disable_auto_sleep = true;
-		} else if (!strcmp(a, "--item-key") || !strcmp(a, "--format") || !strcmp(a, "--write-value")) {
-			i++; // legacy flags, accepted and ignored
+		} else if (!strcmp(a, "--message")) {
+			message = v;
+			i++;
+		} else if (!strcmp(a, "--timeout")) {
+			timeout_secs = atoi(v);
+			i++;
+		} else {
+			TRACE("ignoring unknown option '%s'", a);
 		}
-		// anything else: ignored
 	}
 
-	if (!wizard && !message && !file) {
-		fprintf(stderr, "usage: nxlist.elf --file <list> --write-location <out> | --message <text> | --wizard --step ... --exec ...\n");
+	if (!wizard && !message) {
+		fprintf(stderr, "usage: nxlist.elf --wizard --step ... --exec ... | --message <text> [--timeout <secs>]\n");
 		return 1;
 	}
 
@@ -612,16 +526,9 @@ int main(int argc, char* argv[]) {
 	PWR_init();
 	if (disable_auto_sleep)
 		PWR_disableAutosleep();
-	TRACE("init done (%dx%d), mode=%s", screen ? screen->w : 0, screen ? screen->h : 0,
-		  wizard ? "wizard" : message ? "message" : "list");
+	TRACE("init done (%dx%d), mode=%s", screen ? screen->w : 0, screen ? screen->h : 0, wizard ? "wizard" : "message");
 
-	int rc;
-	if (wizard)
-		rc = run_wizard();
-	else if (message)
-		rc = run_message(message, timeout_secs);
-	else
-		rc = run_list(file, title, cancel_text, confirm_text, write_location);
+	int rc = wizard ? run_wizard() : run_message(message, timeout_secs);
 
 	QuitSettings();
 	PWR_quit();

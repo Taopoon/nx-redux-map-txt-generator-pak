@@ -1,91 +1,109 @@
-# Map.txt Generator.pak (NX Redux edition)
+# Map.txt Generator.pak
 
-An [NX Redux](https://github.com/mohammadsyuhada/nx-redux) tool pak wrapping
-[`minui-map-txt-creator`](https://github.com/josegonzalez/minui-map-txt-creator/)
-to generate `map.txt` files for FinalBurn Neo **and MAME 2003 Plus** romsets,
-so the game list shows real titles ("Metal Slug") instead of arcane rom
-names (`mslug.zip`).
+An [NX Redux](https://github.com/mohammadsyuhada/nx-redux) tool pak that
+generates `map.txt` files for FinalBurn Neo and MAME 2003 Plus rom folders, so
+the game list shows real titles ("Metal Slug") instead of romset names
+(`mslug.zip`).
 
-Adapted from [josegonzalez/minui-map-txt-generator-pak](https://github.com/josegonzalez/minui-map-txt-generator-pak).
+Name matching is done by
+[`minui-map-txt-creator`](https://github.com/josegonzalez/minui-map-txt-creator/);
+the pak started as an NX Redux port of
+[josegonzalez/minui-map-txt-generator-pak](https://github.com/josegonzalez/minui-map-txt-generator-pak).
 
-## What differs from the MinUI pak
+## Features
 
-- **NX Redux / Trimui only** — `tg5040` (Brick, Brick Pro, Smart Pro) and
-  `tg5050` (Smart Pro S). Other MinUI platforms were dropped.
-- **Flat pak layout** — installs to `/Tools/Map.txt Generator.pak`, the NX
-  Redux convention (a `/Tools/<platform>/` subfolder still works as a fallback).
-- **Native NX Redux UI** — lists and messages are drawn by `nxlist.elf`
+- **Native NX Redux UI** — every screen is drawn by `nxlist.elf`
   ([`native/nxlist`](native/nxlist)), compiled inside the NX Redux workspace
-  with the launcher's own toolkit (`ListView`, menu bar, button-hint bar), so
-  fonts, theme colors, the clock/battery bar and the `B EXIT / A SELECT`
-  hints match the Tools menu exactly.
-- **Verified TLS** — the firmware ships no CA store, so dat downloads use the
-  NX Redux bundle (`.system/shared/ssl/ca-certificates.crt`). `-ignore-tls` is
-  only used if that bundle is missing.
-- **Dat cache** — downloaded dat files are kept in
-  `.userdata/<platform>/Map.txt Generator/dats/` and are not re-downloaded on
-  later runs (the GitHub file listing is still fetched, so Wi-Fi is needed).
-- **Local / offline dats** — drop `*.dat` / `*.xml` (ClrMame Pro XML) files
-  into the pak's `dats/` folder and a "Use local dat files" option appears.
-  This path needs no network at all.
-- **Backup of the previous map.txt** — NX Redux's *Rename Rom* stores user
-  aliases in the same `map.txt`. Before regenerating, the old file is copied to
-  a hidden `.map.txt.bak` in the same folder so nothing is lost.
-- **MAME 2003 Plus support** — `(MAME2003PLUS)` folders (and any other
-  `(MAME…)` tag) are listed too, with a *MAME 2003 Plus* option that uses
-  libretro's `mame2003-plus.xml`. The 22 MB list is downloaded once, slimmed
-  to the ~650 KB the creator needs (BIOS sets marked hidden) and cached.
+  with the launcher's own toolkit (`ListView`, menu bar, button-hint bar).
+  Fonts, theme colors, the clock/battery bar and the `B EXIT / A SELECT`
+  hints are the Tools menu's. One process runs the whole session, so there
+  are no black frames between screens and `B` steps back.
+- **FinalBurn Neo** — any `(FBN)` folder, with the per-system dats from the
+  FBNeo repository (Arcade, Neogeo, Megadrive, …) or all of them at once.
+- **MAME 2003 Plus** — any `(MAME…)` folder, using libretro's
+  `mame2003-plus.xml`. The 22 MB list is downloaded once, reduced to the
+  ~650 KB the matcher needs, and cached.
+- **Result summary** — `N / M ROMs mapped · B BIOS hidden · U unmatched`
+  after each run; unmatched rom names are written to the log.
+- **BIOS sets hidden** — written with a leading `.` so NX Redux keeps them out
+  of the game list.
+- **Previous map.txt kept** — NX Redux's *Rename Rom* stores user aliases in
+  the same file, so the old one is copied to a hidden `.map.txt.bak` first.
+- **Offline dats** — drop `*.dat` / `*.xml` (ClrMame Pro XML) files into the
+  pak's `dats/` folder and a *Use local dat files* option appears; that path
+  needs no network.
+- **Verified TLS** — downloads use the NX Redux CA bundle
+  (`.system/shared/ssl/ca-certificates.crt`); the firmware itself ships no CA
+  store.
 
 ## Requirements
 
-- NX Redux on a Trimui Brick / Brick Pro / Smart Pro (`tg5040`) or
-  Smart Pro S (`tg5050`)
-- Wi-Fi (unless you use local dat files)
+- NX Redux on a Trimui Brick / Brick Pro / Smart Pro (`tg5040`) or Smart Pro S
+  (`tg5050`)
+- Wi-Fi, unless you only use local dat files
 - Rom folders tagged `(FBN)` or `(MAME2003PLUS)`, e.g. `Roms/Arcade (FBN)`
 
 ## Installation
 
-1. Mount your NX Redux SD card.
-2. Download the latest release, `Map.txt.Generator.pak.zip`.
-3. Extract it so that you end up with `/Tools/Map.txt Generator.pak/launch.sh`
-   (folder name **with a space**, no dot between `txt` and `Generator`).
-4. Unmount the SD card and boot the device.
+1. Download `Map.txt.Generator.pak.zip` from the latest release.
+2. Extract it onto the SD card so that
+   `/Tools/Map.txt Generator.pak/launch.sh` exists (folder name with a space,
+   no dot between `txt` and `Generator`).
+3. Boot the device.
 
 ## Usage
 
-Browse to `Tools > Map.txt Generator` and press `A`. The whole session runs in
-one `nxlist.elf --wizard` process, so there are no black-outs between screens
-and `B` steps back to the previous screen.
+`Tools > Map.txt Generator`
 
-1. Pick the `(FBN)` / `(MAME2003PLUS)` rom folder.
-2. Pick a dat file: *MAME 2003 Plus* (MAME folders), a specific FBNeo system
-   (Arcade, Neogeo, …), *Use every Dat File*, or *Use local dat files* if you
-   put any into `dats/`.
-3. A status screen shows progress; the result screen reports
-   `N / M ROMs mapped · B BIOS hidden · U unmatched` (unmatched names are in
-   the log). Press `A` to return to the folder list.
+1. **Select ROM Folder** — the `(FBN)` / `(MAME…)` folders under `Roms/`.
+2. **Select Dat File** — *MAME 2003 Plus* (MAME folders only), a specific
+   FBNeo system, *Use every Dat File*, or *Use local dat files* when `dats/`
+   holds any. `B` returns to the folder list.
+3. A status screen shows the download / generation progress.
+4. The result screen shows the summary; `A` returns to the folder list.
 
-BIOS sets are written with a leading `.`, which hides them from the list.
+Open the rom folder afterwards — NX Redux reads `map.txt` each time a folder
+is opened.
+
+### Where the dat files live
+
+| Path | Purpose |
+|---|---|
+| `.userdata/<platform>/Map.txt Generator/dats/` | cache of downloaded FBNeo dats and the reduced `mame2003-plus.dat`; delete a file to force a re-download |
+| `Tools/Map.txt Generator.pak/dats/` | your own dats for the *Use local dat files* option |
 
 ### Advanced
 
-- `FBN_DAT_REF=<git ref>` in the environment overrides the FBNeo dat git
-  reference passed to `minui-map-txt-creator -ref`.
-- `MAME2003PLUS_XML_URL=<url>` overrides where the MAME 2003 Plus list is
-  fetched from; delete `.userdata/<platform>/Map.txt Generator/dats/mame2003-plus.dat`
-  to force a re-download.
-- Debug log: `.userdata/<platform>/logs/Map.txt Generator.txt`.
+- `FBN_DAT_REF=<git ref>` — FBNeo dat git reference passed to
+  `minui-map-txt-creator -ref` (default: the tool's built-in ref).
+- `MAME2003PLUS_XML_URL=<url>` — where the MAME 2003 Plus list is fetched from.
+- Log: `.userdata/<platform>/logs/Map.txt Generator.txt`.
+
+## How it works
+
+`launch.sh` has two entry points:
+
+- **UI session** (no arguments) — lists the rom folders, writes one dat-choice
+  list per folder, then runs `nxlist.elf --wizard` once.
+- **`--generate <folder> <dat>`** — run by `nxlist` through `popen` when the
+  last step is confirmed. Its stdout is a tiny protocol that drives the
+  screens: `@MSG` (status line while running), `@RESULT` / `@DETAIL` (the
+  result screen); everything else goes to the log.
+
+`nxlist.elf` also has a `--message <text> [--timeout <secs>]` mode for
+one-off notices.
 
 ## Building
 
-`nxlist.elf` is cross-compiled by [`.github/workflows/native.yaml`](.github/workflows/native.yaml)
-inside the public `ghcr.io/loveretro/<platform>-toolchain` images against a
-pinned NX Redux ref (`v1.9.0` — bump `nx_redux_ref` when the firmware's UI
-toolkit or `libmsettings` changes). CI drops the result into `bin/<platform>/`
-before packaging; a local `make build` fetches the last released copy instead.
+`nxlist.elf` is cross-compiled by
+[`.github/workflows/native.yaml`](.github/workflows/native.yaml) inside the
+public `ghcr.io/loveretro/<platform>-toolchain` images against a pinned NX Redux
+ref (`v1.9.0`). Bump `nx_redux_ref` when the firmware's UI toolkit or
+`libmsettings` changes. CI places the binaries in `bin/<platform>/` before
+packaging; a local `make build` downloads the last released copies instead.
 
 ```bash
-make build      # nxlist.elf (from the latest release) + minui-map-txt-creator into bin/
+make build      # nxlist.elf (latest release) + minui-map-txt-creator into bin/
 make release    # dist/Map.txt Generator.pak.zip
 make push       # adb push to /mnt/SDCARD/Tools/Map.txt Generator.pak
 ```

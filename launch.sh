@@ -259,7 +259,7 @@ print_summary() {
 
 generate_map_txt() {
     ROM_FOLDER="$1"
-    FBN_DAT_FILE="$2"
+    DAT_CHOICE="$2"
 
     ROMS_DIR="$SDCARD_PATH/Roms/$ROM_FOLDER"
     MAP_FILE="$ROMS_DIR/map.txt"
@@ -270,19 +270,19 @@ generate_map_txt() {
         return 1
     fi
 
-    if [ "$FBN_DAT_FILE" != "$LOCAL_DAT_LABEL" ]; then
+    if [ "$DAT_CHOICE" != "$LOCAL_DAT_LABEL" ]; then
         net_preflight || return 1
     fi
 
     backup_map_txt "$MAP_FILE"
 
     exit_code=0
-    if [ "$FBN_DAT_FILE" = "$MAME2003PLUS_LABEL" ]; then
+    if [ "$DAT_CHOICE" = "$MAME2003PLUS_LABEL" ]; then
         ensure_mame2003plus_dat || return 1
         ui_msg "Generating map.txt for $ROM_FOLDER with MAME 2003 Plus list"
         minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -dat "$MAME2003PLUS_DAT" 1>&2
         exit_code=$?
-    elif [ "$FBN_DAT_FILE" = "$LOCAL_DAT_LABEL" ]; then
+    elif [ "$DAT_CHOICE" = "$LOCAL_DAT_LABEL" ]; then
         ui_msg "Generating map.txt for $ROM_FOLDER with local dat files"
         # build the arg list positionally so paths with spaces/parens survive
         set -- -roms "$ROMS_DIR" -map "$MAP_FILE"
@@ -292,15 +292,15 @@ generate_map_txt() {
         done
         minui-map-txt-creator "$@" 1>&2
         exit_code=$?
-    elif [ "$FBN_DAT_FILE" = "$ALL_DATS_LABEL" ]; then
+    elif [ "$DAT_CHOICE" = "$ALL_DATS_LABEL" ]; then
         ui_msg "Generating map.txt for $ROM_FOLDER with every dat file"
         # shellcheck disable=SC2086
         minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -cache-dir "$DAT_CACHE_DIR" $TLS_ARGS $REF_ARGS -all-dats 1>&2
         exit_code=$?
     else
-        ui_msg "Generating map.txt for $ROM_FOLDER with $FBN_DAT_FILE dat file"
+        ui_msg "Generating map.txt for $ROM_FOLDER with $DAT_CHOICE dat file"
         # shellcheck disable=SC2086
-        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -cache-dir "$DAT_CACHE_DIR" $TLS_ARGS $REF_ARGS -dat-name "FinalBurn Neo (ClrMame Pro XML, $FBN_DAT_FILE only).dat" 1>&2
+        minui-map-txt-creator -roms "$ROMS_DIR" -map "$MAP_FILE" -cache-dir "$DAT_CACHE_DIR" $TLS_ARGS $REF_ARGS -dat-name "FinalBurn Neo (ClrMame Pro XML, $DAT_CHOICE only).dat" 1>&2
         exit_code=$?
     fi
 
