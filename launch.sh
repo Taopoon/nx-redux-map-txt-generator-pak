@@ -115,6 +115,19 @@ restore_settings() {
     rm -rf "$SETTINGS_SANDBOX"
 }
 
+# Stop any nxlist.elf (a background --message) and wait for it to exit:
+# each instance owns the display and spawns fancontrol via PWR_init, so
+# starting the next one before the previous finished cleanup logs
+# "Another instance of fancontrol is still running" and flickers.
+stop_ui() {
+    killall nxlist.elf >/dev/null 2>&1 || true
+    i=0
+    while pidof nxlist.elf >/dev/null 2>&1 && [ $i -lt 20 ]; do
+        sleep 0.05
+        i=$((i + 1))
+    done
+}
+
 # local dats: ClrMame Pro XML files, either *.dat (FBNeo naming) or *.xml
 has_local_dats() {
     [ -d "$LOCAL_DAT_DIR" ] && ls "$LOCAL_DAT_DIR"/*.dat "$LOCAL_DAT_DIR"/*.xml >/dev/null 2>&1
@@ -141,7 +154,7 @@ main_screen() {
         return 2
     fi
 
-    killall nxlist.elf >/dev/null 2>&1 || true
+    stop_ui
     nxlist.elf --disable-auto-sleep --file "/tmp/emus.list" --title "Select ROM Folder for map.txt" --cancel-text "EXIT" --confirm-text "SELECT" --write-location /tmp/minui-output
 }
 
@@ -176,7 +189,7 @@ action_menu() {
         echo "ZX Spectrum Games"
     } >>/tmp/action.list
 
-    killall nxlist.elf >/dev/null 2>&1 || true
+    stop_ui
     nxlist.elf --disable-auto-sleep --file "/tmp/action.list" --title "Select Dat File for $ROM_FOLDER" --cancel-text "BACK" --confirm-text "SELECT" --write-location /tmp/action-output
 
     if [ $? -ne 0 ]; then
@@ -341,7 +354,7 @@ show_message() {
         seconds="forever"
     fi
 
-    killall nxlist.elf >/dev/null 2>&1 || true
+    stop_ui
     echo "$message" 1>&2
     if [ "$seconds" = "forever" ]; then
         nxlist.elf --message "$message" --timeout -1 &
