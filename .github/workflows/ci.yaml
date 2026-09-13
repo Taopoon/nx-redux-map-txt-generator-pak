@@ -43,6 +43,7 @@ jobs:
 
       - name: Place nxlist binaries
         run: |
+          make clean
           for p in tg5040 tg5050; do
             mkdir -p "bin/$p"
             cp "native-artifacts/nxlist-$p/nxlist.elf" "bin/$p/nxlist.elf"
@@ -50,7 +51,7 @@ jobs:
           done
 
       - name: Create release
-        run: make clean build release
+        run: make build release
 
       - name: Get Pak Name
         id: pak-name

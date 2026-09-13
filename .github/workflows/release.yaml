@@ -74,6 +74,7 @@ jobs:
 
       - name: Place nxlist binaries
         run: |
+          make clean
           for p in tg5040 tg5050; do
             mkdir -p "bin/$p"
             cp "native-artifacts/nxlist-$p/nxlist.elf" "bin/$p/nxlist.elf"
@@ -82,7 +83,7 @@ jobs:
 
       - name: Create release
         run: |
-          make clean build release
+          make build release
           for p in tg5040 tg5050; do cp "bin/$p/nxlist.elf" "dist/nxlist-$p.elf"; done
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
