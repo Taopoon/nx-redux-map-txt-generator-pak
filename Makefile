@@ -5,38 +5,31 @@ PAK_FOLDER := $(shell echo $(PAK_TYPE) | cut -c1)$(shell echo $(PAK_TYPE) | tr '
 PUSH_SDCARD_PATH ?= /mnt/SDCARD
 
 # NX Redux only (Trimui Brick / Brick Pro / Smart Pro = tg5040, Smart Pro S = tg5050).
-# NX Redux is a NextUI fork, so the "-nextui" builds of minui-list /
-# minui-presenter are used: they follow the device theme and link against
-# NextUI's libmsettings.
+# The UI is native/nxlist, compiled inside the NX Redux workspace by
+# .github/workflows/native.yaml so it renders with the launcher's own
+# toolkit. CI drops the built nxlist.elf into bin/<platform>/ before this
+# runs; a local `make build` without one fetches the last released copy.
 ARCHITECTURES := arm64
 PLATFORMS := tg5040 tg5050
-UI_SUFFIX := -nextui
 
-MINUI_LIST_VERSION := 0.15.1
-MINUI_PRESENTER_VERSION := 0.13.1
+NXLIST_RELEASE_URL ?= https://github.com/Taopoon/nx-redux-map-txt-generator-pak/releases/latest/download
 MINUI_MAP_TXT_CREATOR_VERSION := 0.2.0
 
 clean:
 	rm -f bin/*/minui-map-txt-creator || true
-	rm -f bin/*/minui-list || true
-	rm -f bin/*/minui-presenter || true
+	rm -f bin/*/nxlist.elf || true
 
-build: $(foreach platform,$(PLATFORMS),bin/$(platform)/minui-list bin/$(platform)/minui-presenter) $(foreach arch,$(ARCHITECTURES),bin/$(arch)/minui-map-txt-creator)
+build: $(foreach platform,$(PLATFORMS),bin/$(platform)/nxlist.elf) $(foreach arch,$(ARCHITECTURES),bin/$(arch)/minui-map-txt-creator)
 
-bin/%/minui-list:
+bin/%/nxlist.elf:
 	mkdir -p bin/$*
-	curl -f -o bin/$*/minui-list -sSL https://github.com/josegonzalez/minui-list/releases/download/$(MINUI_LIST_VERSION)/minui-list-$*$(UI_SUFFIX)
-	chmod +x bin/$*/minui-list
+	curl -f -o bin/$*/nxlist.elf -sSL $(NXLIST_RELEASE_URL)/nxlist-$*.elf
+	chmod +x bin/$*/nxlist.elf
 
 bin/%/minui-map-txt-creator:
 	mkdir -p bin/$*
 	curl -f -o bin/$*/minui-map-txt-creator -sSL https://github.com/josegonzalez/minui-map-txt-creator/releases/download/$(MINUI_MAP_TXT_CREATOR_VERSION)/minui-map-txt-creator-linux-$*
 	chmod +x bin/$*/minui-map-txt-creator
-
-bin/%/minui-presenter:
-	mkdir -p bin/$*
-	curl -f -o bin/$*/minui-presenter -sSL https://github.com/josegonzalez/minui-presenter/releases/download/$(MINUI_PRESENTER_VERSION)/minui-presenter-$*$(UI_SUFFIX)
-	chmod +x bin/$*/minui-presenter
 
 release: build
 	mkdir -p dist

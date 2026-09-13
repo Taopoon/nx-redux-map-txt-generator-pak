@@ -14,8 +14,11 @@ Adapted from [josegonzalez/minui-map-txt-generator-pak](https://github.com/joseg
   `tg5050` (Smart Pro S). Other MinUI platforms were dropped.
 - **Flat pak layout** — installs to `/Tools/Map.txt Generator.pak`, the NX
   Redux convention (a `/Tools/<platform>/` subfolder still works as a fallback).
-- **NextUI-flavoured UI binaries** — uses the `-nextui` builds of
-  `minui-list` / `minui-presenter`, which follow the device theme.
+- **Native NX Redux UI** — lists and messages are drawn by `nxlist.elf`
+  ([`native/nxlist`](native/nxlist)), compiled inside the NX Redux workspace
+  with the launcher's own toolkit (`ListView`, menu bar, button-hint bar), so
+  fonts, theme colors, the clock/battery bar and the `B EXIT / A SELECT`
+  hints match the Tools menu exactly. No minui-list / minui-presenter.
 - **Verified TLS** — the firmware ships no CA store, so dat downloads use the
   NX Redux bundle (`.system/shared/ssl/ca-certificates.crt`). `-ignore-tls` is
   only used if that bundle is missing.
@@ -32,11 +35,9 @@ Adapted from [josegonzalez/minui-map-txt-generator-pak](https://github.com/joseg
   `(MAME…)` tag) are listed too, with a *MAME 2003 Plus* option that uses
   libretro's `mame2003-plus.xml`. The 22 MB list is downloaded once, slimmed
   to the ~650 KB the creator needs (BIOS sets marked hidden) and cached.
-- **Settings-file protection** — the `-nextui` UI binaries embed NextUI
-  v6.14 code whose settings loader rewrites `minuisettings.txt` and drops every
-  NX Redux-only key (theme/options reset to defaults after running the pak).
-  The pak points their write path at a throwaway sandbox, snapshots the real
-  file, and restores it if keys ever go missing.
+- **Settings-file protection** — a snapshot of `minuisettings.txt` is taken
+  before the UI runs and restored if keys ever go missing (a leftover from the
+  NextUI-built minui-list days, kept as a safety net).
 
 ## Requirements
 
@@ -76,8 +77,14 @@ BIOS sets are written with a leading `.`, which hides them from the list.
 
 ## Building
 
+`nxlist.elf` is cross-compiled by [`.github/workflows/native.yaml`](.github/workflows/native.yaml)
+inside the public `ghcr.io/loveretro/<platform>-toolchain` images against a
+pinned NX Redux ref (`v1.9.0` — bump `nx_redux_ref` when the firmware's UI
+toolkit or `libmsettings` changes). CI drops the result into `bin/<platform>/`
+before packaging; a local `make build` fetches the last released copy instead.
+
 ```bash
-make build      # downloads the pinned binaries into bin/
+make build      # nxlist.elf (from the latest release) + minui-map-txt-creator into bin/
 make release    # dist/Map.txt Generator.pak.zip
 make push       # adb push to /mnt/SDCARD/Tools/Map.txt Generator.pak
 ```

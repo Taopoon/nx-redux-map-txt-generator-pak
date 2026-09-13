@@ -12,12 +12,11 @@
 #     $SHARED_SYSTEM_PATH/ssl/ca-certificates.crt
 #   - map.txt is also where "Rename Rom" stores user aliases, so the previous
 #     file is kept as a dot-prefixed backup (dotfiles are hidden from the list)
-#   - the -nextui builds of minui-list/minui-presenter embed NextUI v6.14
-#     common code whose CFG_init rewrites minuisettings.txt (fopen "w") once
-#     per parsed key, dropping every NX Redux-only key. They READ the theme
-#     from the compile-time path but WRITE to $SHARED_USERDATA_PATH, so the
-#     env var is pointed at a throwaway sandbox while the UI binaries run
-#     (see protect_settings / cleanup)
+#   - the UI is bin/<platform>/nxlist.elf (native/nxlist, built inside the
+#     NX Redux workspace) so lists and messages render exactly like the
+#     launcher's Tools menu. The minuisettings.txt sandbox below predates it
+#     (the NextUI-built minui-list used to clobber the file) and is kept as a
+#     cheap safety net: NX Redux's own CFG_init never writes during load.
 set -x
 PAK_DIR="$(dirname "$0")"
 PAK_NAME="$(basename "$PAK_DIR")"
@@ -131,9 +130,7 @@ is_mame_folder() {
 }
 
 main_screen() {
-    minui_list_file="/tmp/minui-list"
-    rm -f "$minui_list_file" "/tmp/minui-output"
-    touch "$minui_list_file"
+    rm -f "/tmp/minui-output"
 
     if [ ! -f "/tmp/emus.list" ]; then
         populate_emus_list
@@ -144,8 +141,8 @@ main_screen() {
         return 2
     fi
 
-    killall minui-presenter >/dev/null 2>&1 || true
-    minui-list --disable-auto-sleep --item-key "folders" --file "/tmp/emus.list" --format text --cancel-text "EXIT" --title "Select ROM Folder for map.txt" --write-location /tmp/minui-output --write-value selected
+    killall nxlist.elf >/dev/null 2>&1 || true
+    nxlist.elf --disable-auto-sleep --file "/tmp/emus.list" --title "Select ROM Folder for map.txt" --cancel-text "EXIT" --confirm-text "SELECT" --write-location /tmp/minui-output
 }
 
 action_menu() {
@@ -179,8 +176,8 @@ action_menu() {
         echo "ZX Spectrum Games"
     } >>/tmp/action.list
 
-    killall minui-presenter >/dev/null 2>&1 || true
-    minui-list --disable-auto-sleep --item-key "actions" --file "/tmp/action.list" --format text --cancel-text "BACK" --title "Select Dat File for $ROM_FOLDER" --write-location /tmp/action-output --write-value selected
+    killall nxlist.elf >/dev/null 2>&1 || true
+    nxlist.elf --disable-auto-sleep --file "/tmp/action.list" --title "Select Dat File for $ROM_FOLDER" --cancel-text "BACK" --confirm-text "SELECT" --write-location /tmp/action-output
 
     if [ $? -ne 0 ]; then
         return 1
@@ -344,12 +341,12 @@ show_message() {
         seconds="forever"
     fi
 
-    killall minui-presenter >/dev/null 2>&1 || true
+    killall nxlist.elf >/dev/null 2>&1 || true
     echo "$message" 1>&2
     if [ "$seconds" = "forever" ]; then
-        minui-presenter --message "$message" --timeout -1 &
+        nxlist.elf --message "$message" --timeout -1 &
     else
-        minui-presenter --message "$message" --timeout "$seconds"
+        nxlist.elf --message "$message" --timeout "$seconds"
     fi
 }
 
@@ -360,7 +357,7 @@ cleanup() {
     rm -f /tmp/minui-output
     rm -f /tmp/action.list
     rm -f /tmp/action-output
-    killall minui-presenter >/dev/null 2>&1 || true
+    killall nxlist.elf >/dev/null 2>&1 || true
 }
 
 main() {
@@ -370,17 +367,12 @@ main() {
 
     allowed_platforms="tg5040 tg5050"
     if ! echo "$allowed_platforms" | grep -qw "$PLATFORM"; then
-        show_message "$PLATFORM is not a supported platform" 2
+        echo "$PLATFORM is not a supported platform" 1>&2
         return 1
     fi
 
-    if ! command -v minui-list >/dev/null 2>&1; then
-        show_message "minui-list not found" 2
-        return 1
-    fi
-
-    if ! command -v minui-presenter >/dev/null 2>&1; then
-        show_message "minui-presenter not found" 2
+    if ! command -v nxlist.elf >/dev/null 2>&1; then
+        echo "nxlist.elf not found for $PLATFORM" 1>&2
         return 1
     fi
 
@@ -389,8 +381,7 @@ main() {
         return 1
     fi
 
-    chmod +x "$PAK_DIR/bin/$PLATFORM/minui-list"
-    chmod +x "$PAK_DIR/bin/$PLATFORM/minui-presenter"
+    chmod +x "$PAK_DIR/bin/$PLATFORM/nxlist.elf"
     chmod +x "$PAK_DIR/bin/$architecture/minui-map-txt-creator"
 
     while true; do

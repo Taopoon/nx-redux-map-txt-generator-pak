@@ -1,5 +1,3 @@
 bin/arm64/minui-map-txt-creator
-bin/tg5040/minui-list
-bin/tg5040/minui-presenter
-bin/tg5050/minui-list
-bin/tg5050/minui-presenter
+bin/tg5040/nxlist.elf
+bin/tg5050/nxlist.elf

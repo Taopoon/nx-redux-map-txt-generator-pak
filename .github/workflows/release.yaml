@@ -45,10 +45,15 @@ jobs:
           bump: ${{ github.event.inputs.bump_type }}
           input: ${{ steps.latest-tag.outputs.GIT_LATEST_TAG }}
 
+  native:
+    uses: ./.github/workflows/native.yaml
+
   build:
     name: build
     runs-on: ubuntu-24.04-arm
-    needs: version
+    needs:
+      - version
+      - native
 
     steps:
       - name: Checkout
@@ -61,8 +66,24 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v4.0.0
 
+      - name: Download nxlist binaries
+        uses: actions/download-artifact@v8.0.0
+        with:
+          pattern: nxlist-*
+          path: native-artifacts
+
+      - name: Place nxlist binaries
+        run: |
+          for p in tg5040 tg5050; do
+            mkdir -p "bin/$p"
+            cp "native-artifacts/nxlist-$p/nxlist.elf" "bin/$p/nxlist.elf"
+            chmod +x "bin/$p/nxlist.elf"
+          done
+
       - name: Create release
-        run: make clean build release
+        run: |
+          make clean build release
+          for p in tg5040 tg5050; do cp "bin/$p/nxlist.elf" "dist/nxlist-$p.elf"; done
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
 

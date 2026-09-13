@@ -1,0 +1,60 @@
+---
+name: "native"
+
+# Builds bin/<platform>/nxlist.elf inside the NX Redux toolchain images.
+# Reusable: ci.yaml and release.yaml call it, then drop the artifacts into
+# bin/ before `make release`.
+
+# yamllint disable-line rule:truthy
+on:
+  workflow_call:
+    inputs:
+      nx_redux_ref:
+        description: "NX Redux git ref to build against (must match the firmware on the card)"
+        default: "v1.9.0"
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      nx_redux_ref:
+        description: "NX Redux git ref to build against"
+        default: "v1.9.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  nxlist:
+    name: nxlist (${{ matrix.platform }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [tg5040, tg5050]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Checkout NX Redux ${{ inputs.nx_redux_ref || 'v1.9.0' }}
+        run: |
+          git clone --depth 1 --branch "${{ inputs.nx_redux_ref || 'v1.9.0' }}" \
+            https://github.com/mohammadsyuhada/nx-redux nx-redux
+          cp -r native/nxlist nx-redux/workspace/all/nxlist
+
+      - name: Build in ${{ matrix.platform }} toolchain
+        run: |
+          docker run --rm \
+            -v "$PWD/nx-redux/workspace:/root/workspace" \
+            "ghcr.io/loveretro/${{ matrix.platform }}-toolchain:latest" \
+            /bin/bash -c '. ~/.bashrc && cd /root/workspace/all/nxlist && make'
+          ls -la "nx-redux/workspace/all/nxlist/build/${{ matrix.platform }}/"
+
+      - name: Upload
+        uses: actions/upload-artifact@v5.0.0
+        with:
+          name: nxlist-${{ matrix.platform }}
+          path: nx-redux/workspace/all/nxlist/build/${{ matrix.platform }}/nxlist.elf
+          if-no-files-found: error
