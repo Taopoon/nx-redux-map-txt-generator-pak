@@ -71,7 +71,9 @@ jobs:
         run: |
           echo "PAK_NAME=$(jq -r .name pak.json)" >> $GITHUB_OUTPUT
 
+      # attestations are not available on user-owned private repos
       - name: Attest Build Provenance
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@v4.1.0
         with:
           subject-path: "dist/${{ steps.pak-name.outputs.PAK_NAME }}.pak.zip"
