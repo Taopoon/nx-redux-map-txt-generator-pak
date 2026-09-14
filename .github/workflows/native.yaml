@@ -36,7 +36,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.1
 
       - name: Checkout NX Redux ${{ inputs.nx_redux_ref || 'v1.9.0' }}
         run: |
