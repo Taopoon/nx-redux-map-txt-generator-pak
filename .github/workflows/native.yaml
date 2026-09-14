@@ -53,7 +53,7 @@ jobs:
           ls -la "nx-redux/workspace/all/nxlist/build/${{ matrix.platform }}/"
 
       - name: Upload
-        uses: actions/upload-artifact@v5.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: nxlist-${{ matrix.platform }}
           path: nx-redux/workspace/all/nxlist/build/${{ matrix.platform }}/nxlist.elf
